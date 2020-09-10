@@ -9,5 +9,11 @@ import com.wuqiong.tx.entity.User;
  */
 public interface UserService {
 
+    /**
+     * 新增用户
+     * @param user
+     */
+    void addUser(User user);
+
     User getUserByID(String companyID, long id);
 }

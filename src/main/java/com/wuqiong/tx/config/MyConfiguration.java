@@ -2,6 +2,7 @@ package com.wuqiong.tx.config;
 
 import com.wuqiong.tx.context.ApplicationContextHelper;
 import com.wuqiong.tx.datasource.MultiDatasource;
+import com.wuqiong.tx.transaction.MyTransactionManager;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.annotation.MapperScan;
@@ -53,11 +54,18 @@ public class MyConfiguration {
         return dataSource;
     }
 
-    @Bean(name = "transactionManager")
+    //@Bean(name = "transactionManager")
     public PlatformTransactionManager transactionManager(MultiDatasource multiDatasource) {
         DataSourceTransactionManager transactionManager = new DataSourceTransactionManager();
         transactionManager.setDataSource(multiDatasource);
         return transactionManager;
+    }
+
+    @Bean(name = "myTransactionManager")
+    public MyTransactionManager myTransactionManager(MultiDatasource multiDatasource) {
+        MyTransactionManager myTransactionManager = new MyTransactionManager();
+        myTransactionManager.setDataSource(multiDatasource);
+        return myTransactionManager;
     }
 
     @Bean(name = "SqlSessionFactory")

@@ -11,6 +11,12 @@ import org.apache.ibatis.annotations.Param;
 public interface UserMapper {
 
     /**
+     * 新增用户
+     * @param user
+     */
+    void addUser(User user);
+
+    /**
      *
      * @param id
      * @return
