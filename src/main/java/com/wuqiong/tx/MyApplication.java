@@ -6,7 +6,6 @@ import com.wuqiong.tx.entity.Trade;
 import com.wuqiong.tx.entity.User;
 import com.wuqiong.tx.service.TradeService;
 import com.wuqiong.tx.service.UserService;
-import com.wuqiong.tx.service.UserServiceImpl;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 /**
@@ -45,7 +44,7 @@ public class MyApplication {
 
     private static void addTradeTest() {
         Trade trade = new Trade();
-        trade.setBuyerID("buyerID2020091005");
+        trade.setBuyerID("buyerID2020091015");
         tradeService.addTrade(trade);
     }
 }

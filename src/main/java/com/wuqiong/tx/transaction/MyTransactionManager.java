@@ -31,15 +31,18 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
 
     @Override
     public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
-        MyDataSourceTransactionObject txConnect = doGetTransaction();
-        doBegin(txConnect, definition);
+        MyDataSourceTransactionObject txInfo = doGetTransaction();
         if (definition == null) {
             // 使用默认的事务定义,默认事务传播机制PROPAGATION_REQUIRED,默认事务隔离级别使用数据库事务隔离级别
             definition = new DefaultTransactionDefinition();
         }
+        if (isExistingTransaction(txInfo)) {
+            return handleExistTransaction(txInfo);
+        }
         if (definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRED) {
             // 开启一个事务
-            DefaultTransactionStatus status = new DefaultTransactionStatus(txConnect, true, false, false, true, null);
+            doBegin(txInfo, definition);
+            DefaultTransactionStatus status = new DefaultTransactionStatus(txInfo, true, false, false, true, null);
             return status;
         } else {
             // 创建一个空事务
@@ -49,10 +52,13 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
 
     @Override
     public void commit(TransactionStatus status) throws TransactionException {
-        MyTransactionManager.MyDataSourceTransactionObject txObject = (MyTransactionManager.MyDataSourceTransactionObject) ((DefaultTransactionStatus)status).getTransaction();
+        MyTransactionManager.MyDataSourceTransactionObject txObject =
+                (MyTransactionManager.MyDataSourceTransactionObject) ((DefaultTransactionStatus)status).getTransaction();
         Connection con = txObject.getConnectionHolder().getConnection();
         try {
-            con.commit();
+            if (status.isNewTransaction()) {
+                con.commit();
+            }
         }
         catch (SQLException ex) {
             throw new TransactionSystemException("Could not commit JDBC transaction", ex);
@@ -61,7 +67,15 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
 
     @Override
     public void rollback(TransactionStatus status) throws TransactionException {
-
+        MyTransactionManager.MyDataSourceTransactionObject txObject =
+                (MyTransactionManager.MyDataSourceTransactionObject) ((DefaultTransactionStatus)status).getTransaction();
+        Connection con = txObject.getConnectionHolder().getConnection();
+        try {
+            con.rollback();
+        }
+        catch (SQLException ex) {
+            throw new TransactionSystemException("Could not roll back JDBC transaction", ex);
+        }
     }
 
     /**
@@ -123,6 +137,25 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
             // 绑定事务到当前线程
             TransactionSynchronizationManager.bindResource(getDataSource(), txObject.getConnectionHolder());
         }
+    }
+
+    /**
+     * 是否已存在事务
+     * @param transaction
+     * @return
+     */
+    private boolean isExistingTransaction(MyDataSourceTransactionObject transaction) {
+        return (transaction.getConnectionHolder() != null);
+    }
+
+    /**
+     * 处理已经存在事务的情况
+     * @param txInfo 事务信息
+     * @return
+     */
+    private DefaultTransactionStatus handleExistTransaction(MyDataSourceTransactionObject txInfo ) {
+        DefaultTransactionStatus status = new DefaultTransactionStatus(txInfo, false, false, false, true, null);
+        return status;
     }
 
     /**

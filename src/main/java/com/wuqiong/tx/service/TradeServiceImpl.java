@@ -26,15 +26,21 @@ public class TradeServiceImpl implements TradeService {
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = RuntimeException.class)
     @Override
     public void addTrade(Trade trade) {
-        String companyID = ContextHolder.getCompanyID();
-        User user = new User();
-        user.setCompanyID(companyID);
-        user.setUsername(trade.getBuyerID());
-        userService.addUser(user);
-//        int a = 1;
-//        int b = 0;
-//        int c = a/b;
-        trade.setCompanyID(companyID);
-        tradeMapper.addTrade(trade);
+        try {
+            String companyID = ContextHolder.getCompanyID();
+            User user = new User();
+            user.setCompanyID(companyID);
+            user.setUsername(trade.getBuyerID());
+            userService.addUser(user);
+            int a = 1;
+            int b = 0;
+            int c = a/b;
+            trade.setCompanyID(companyID);
+            tradeMapper.addTrade(trade);
+        } catch (Exception e) {
+            System.out.println("保存订单出错");
+            throw new RuntimeException("保存订单出错");
+        }
+
     }
 }
