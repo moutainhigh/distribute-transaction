@@ -5,6 +5,8 @@ import com.wuqiong.tx.bean.RemoteTransactionInfo;
 import com.wuqiong.tx.context.ApplicationContextHelper;
 import com.wuqiong.tx.enums.RemoteTransactionStatus;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +84,39 @@ public class RemoteTransactionUtils {
         return remoteTx;
     }
 
+    /**
+     * 是否是主事务
+     * @param transactionID
+     * @return
+     */
+    public static boolean isMainTransaction(String transactionID) {
+        StringRedisTemplate template = ApplicationContextHelper
+                .getBeanByNameAndType("stringRedisTemplate", StringRedisTemplate.class);
+        String remoteTxStr = template.opsForValue().get(transactionID);
+        return StringUtils.hasText(remoteTxStr);
+    }
+
+    /**
+     * 是否存在异常的子事务
+     * @param tx
+     * @return
+     */
+    public static boolean existErrorSubTransaction(RemoteTransactionInfo tx) {
+        if (tx == null) return false;
+        if (CollectionUtils.isEmpty(tx.getSubTransactionInfoList())) return false;
+        for (RemoteTransactionInfo subTx : tx.getSubTransactionInfoList()) {
+            if (subTx == null) continue;
+            if (subTx.getStatus() == RemoteTransactionStatus.ERROR.status) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 创建主事务
+     * @param transactionID
+     * @param isMain
+     * @return
+     */
     private static RemoteTransactionInfo createTransaction(String transactionID, boolean isMain) {
         RemoteTransactionInfo transactionInfo = new RemoteTransactionInfo();
         transactionInfo.setTransactionID(transactionID);

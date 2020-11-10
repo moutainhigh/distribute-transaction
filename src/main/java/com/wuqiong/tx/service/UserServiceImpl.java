@@ -22,6 +22,7 @@ public class UserServiceImpl implements UserService {
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = RuntimeException.class)
     @Override
     public void addUser(User user) {
+        int a = 1/user.getFrom();
         userMapper.addUser(user);
     }
 

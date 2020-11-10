@@ -33,11 +33,10 @@ public class TradeServiceImpl implements TradeService {
             User user = new User();
             user.setCompanyID(companyID);
             user.setUsername(trade.getBuyerID());
+            user.setFrom(trade.getFrom());
             String transactionID = ContextHolder.getLocalTransactionID();
             userRestService.addUser(companyID, transactionID, user);
-            int a = 1;
-            int b = 0;
-            int c = a/b;
+            int c = 1/trade.getAmount();
             trade.setCompanyID(companyID);
             tradeMapper.addTrade(trade);
         } catch (Exception e) {

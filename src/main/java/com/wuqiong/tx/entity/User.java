@@ -16,6 +16,7 @@ public class User implements Serializable {
     private String companyID;
     private String username;
     private Date createTime;
+    private int from;
 
     public long getId() {
         return id;
@@ -47,5 +48,13 @@ public class User implements Serializable {
 
     public void setCreateTime(Date createTime) {
         this.createTime = createTime;
+    }
+
+    public int getFrom() {
+        return from;
+    }
+
+    public void setFrom(int from) {
+        this.from = from;
     }
 }

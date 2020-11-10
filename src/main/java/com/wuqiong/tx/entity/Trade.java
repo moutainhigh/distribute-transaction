@@ -17,6 +17,8 @@ public class Trade implements Serializable {
     private String companyID;
     private String buyerID;
     private Long userID;
+    private int amount;
+    private int from;
 
     public long getId() {
         return id;
@@ -56,5 +58,21 @@ public class Trade implements Serializable {
 
     public void setUserID(Long userID) {
         this.userID = userID;
+    }
+
+    public int getAmount() {
+        return amount;
+    }
+
+    public void setAmount(int amount) {
+        this.amount = amount;
+    }
+
+    public int getFrom() {
+        return from;
+    }
+
+    public void setFrom(int from) {
+        this.from = from;
     }
 }

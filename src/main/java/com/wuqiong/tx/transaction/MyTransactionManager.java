@@ -1,21 +1,16 @@
 package com.wuqiong.tx.transaction;
 
+import com.google.gson.Gson;
 import com.wuqiong.tx.bean.RemoteTransactionInfo;
 import com.wuqiong.tx.context.ContextHolder;
 import com.wuqiong.tx.enums.RemoteTransactionStatus;
+import com.wuqiong.tx.util.MqProducerUtils;
 import com.wuqiong.tx.util.RemoteTransactionUtils;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
-import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
-import org.apache.rocketmq.client.exception.MQBrokerException;
-import org.apache.rocketmq.client.exception.MQClientException;
-import org.apache.rocketmq.client.producer.DefaultMQProducer;
 import org.apache.rocketmq.client.producer.SendResult;
-import org.apache.rocketmq.common.message.Message;
 import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.remoting.common.RemotingHelper;
-import org.apache.rocketmq.remoting.exception.RemotingException;
 import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.jdbc.datasource.JdbcTransactionObjectSupport;
 import org.springframework.transaction.*;
@@ -26,10 +21,8 @@ import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
 import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -53,7 +46,8 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
     public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
         MyDataSourceTransactionObject txInfo = doGetTransaction();
         String localTransactionID = ContextHolder.getLocalTransactionID();
-        if (ContextHolder.getMainTransactionID() != null) {
+        if (StringUtils.hasText(ContextHolder.getMainTransactionID())
+                && RemoteTransactionUtils.isMainTransaction(ContextHolder.getMainTransactionID())) {
             if (localTransactionID == null) {
                 localTransactionID = UUID.randomUUID().toString();
                 // 存在远程事务,将本地事务状态更新到redis
@@ -91,34 +85,56 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
                 (MyTransactionManager.MyDataSourceTransactionObject) ((DefaultTransactionStatus)status).getTransaction();
         Connection con = txObject.getConnectionHolder().getConnection();
         try {
-            if (StringUtils.hasText(ContextHolder.getMainTransactionID())) {
-                // 有远程事务
+            if (StringUtils.hasText(ContextHolder.getLocalTransactionID()) &&
+                    RemoteTransactionUtils.isMainTransaction(ContextHolder.getLocalTransactionID())) {
+                // 有远程事务,并且是主事务
+                RemoteTransactionInfo remoteTransactionInfo = RemoteTransactionUtils.getRemoteTransaction(ContextHolder.getLocalTransactionID());
+                if (remoteTransactionInfo != null) {
+                    // 检查所有子事务状态
+                    if (!RemoteTransactionUtils.existErrorSubTransaction(remoteTransactionInfo)) {
+                        // 通知其他子事务提交事务
+                        SendResult sendResult = MqProducerUtils.commitNotify(ContextHolder.getLocalTransactionID());
+                        System.out.println("通知子事务提交,发送结果:"+new Gson().toJson(sendResult));
+                        // todo 检查消息处理结果
+                        con.commit();
+                    } else {
+                        // 通知其他子事务回滚
+                        SendResult sendResult = MqProducerUtils.rollbackNotify(ContextHolder.getLocalTransactionID());
+                        System.out.println("通知子事务回滚,发送结果:"+new Gson().toJson(sendResult));
+                        con.rollback();
+                    }
+                }
+            } else if (StringUtils.hasText(ContextHolder.getMainTransactionID())) {
+                // 有远程事务,并且是子事务
                 // 标记本事务为可提交状态
                 RemoteTransactionUtils.updateRemoteTransactoinStatus(ContextHolder.getMainTransactionID(),
                         ContextHolder.getLocalTransactionID(), RemoteTransactionStatus.PREPARED.status);
                 // 挂起事务等待主事务通知提交或回滚
-                DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("consumer");
+                DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("commit");
                 consumer.setNamesrvAddr("114.116.237.83:9876");
+                consumer.setInstanceName(UUID.randomUUID().toString());
                 consumer.setVipChannelEnabled(false);
                 try {
                     consumer.subscribe(ContextHolder.getMainTransactionID(), "*");
-                    consumer.registerMessageListener(new MessageListenerConcurrently() {
-                        @Override
-                        public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> list, ConsumeConcurrentlyContext consumeConcurrentlyContext) {
-                            for (MessageExt message : list) {
-                                String topic = message.getTopic();
-                                byte[] body = message.getBody();
-                                String keys = message.getKeys();
-                                String tags = message.getTags();
-                                System.out.println("消息内容,topic:"+topic+",body:"+new String(body)+",keys:"+keys+",tags:"+tags);
-                                try {
-                                    con.commit();
-                                } catch (SQLException e) {
-                                    e.printStackTrace();
-                                }
+                    consumer.registerMessageListener((MessageListenerConcurrently) (list, consumeConcurrentlyContext) -> {
+                        MessageExt message = list.iterator().next();
+                        String topic = message.getTopic();
+                        byte[] body = message.getBody();
+                        String keys = message.getKeys();
+                        String tags = message.getTags();
+                        String action = new String(message.getBody());
+                        try {
+                            if ("commit".equals(action)) {
+                                System.out.println("子事务提交,topic:"+topic+",body:"+new String(body)+",keys:"+keys+",tags:"+tags);
+                                con.commit();
+                            } else {
+                                System.out.println("子事务回滚,topic:"+topic+",body:"+new String(body)+",keys:"+keys+",tags:"+tags);
+                                con.rollback();
                             }
-                            return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+                        } catch (SQLException e) {
+                            e.printStackTrace();
                         }
+                        return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
                     });
                     consumer.start();
                     System.out.println("Consumer Started.%n");
@@ -126,37 +142,11 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
                 catch (Exception e) {
                     e.printStackTrace();
                 }
-            } else if (StringUtils.hasText(ContextHolder.getLocalTransactionID())) {
-                // 检查本地事务是否是主事务
-                RemoteTransactionInfo remoteTransactionInfo = RemoteTransactionUtils.getRemoteTransaction(ContextHolder.getLocalTransactionID());
-                if (remoteTransactionInfo != null) {
-                    // 通知其他子事务提交事务
-                    DefaultMQProducer producer = new DefaultMQProducer("syncMQ");
-                    producer.setNamesrvAddr("114.116.237.83:9876");
-                    producer.setVipChannelEnabled(false);
-                    producer.start();
-                    Message msg = new Message("TopicTest",
-                            "TagA",
-                            ("Hello RocketMQ").getBytes(RemotingHelper.DEFAULT_CHARSET));
-                    SendResult sendResult = producer.send(msg);
-                    producer.shutdown();
-                }
             } else if (status.isNewTransaction()) {
                 con.commit();
             }
         } catch (SQLException ex) {
             throw new TransactionSystemException("Could not commit JDBC transaction", ex);
-        }
-        catch (MQClientException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } catch (RemotingException e) {
-            e.printStackTrace();
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        } catch (MQBrokerException e) {
-            e.printStackTrace();
         }
     }
 
@@ -166,7 +156,22 @@ public class MyTransactionManager implements PlatformTransactionManager, Seriali
                 (MyTransactionManager.MyDataSourceTransactionObject) ((DefaultTransactionStatus)status).getTransaction();
         Connection con = txObject.getConnectionHolder().getConnection();
         try {
-            con.rollback();
+            if (StringUtils.hasText(ContextHolder.getLocalTransactionID())
+                    && RemoteTransactionUtils.isMainTransaction(ContextHolder.getLocalTransactionID())) {
+                // 有远程事务,且是主事务
+                // 通知所有子事务回滚
+                SendResult sendResult = MqProducerUtils.rollbackNotify(ContextHolder.getLocalTransactionID());
+                System.out.println("通知子事务回滚,发送结果:"+new Gson().toJson(sendResult));
+                con.rollback();
+            } else if (StringUtils.hasText(ContextHolder.getMainTransactionID())) {
+                // 有远程事务,且是子事务
+                // 标记本事务为异常状态
+                RemoteTransactionUtils.updateRemoteTransactoinStatus(ContextHolder.getMainTransactionID(),
+                        ContextHolder.getLocalTransactionID(), RemoteTransactionStatus.ERROR.status);
+                con.rollback();
+            } else {
+                con.rollback();
+            }
         }
         catch (SQLException ex) {
             throw new TransactionSystemException("Could not roll back JDBC transaction", ex);

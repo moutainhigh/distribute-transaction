@@ -10,7 +10,9 @@ public enum RemoteTransactionStatus {
     /** 已创建 */
     CREATED(1),
     /** 已准备 */
-    PREPARED(2);
+    PREPARED(2),
+    /** 事务异常 */
+    ERROR(3);
 
     public int status;
 
