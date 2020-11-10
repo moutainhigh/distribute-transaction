@@ -4,6 +4,8 @@ import com.wuqiong.tx.context.ContextHolder;
 import com.wuqiong.tx.entity.Trade;
 import com.wuqiong.tx.entity.User;
 import com.wuqiong.tx.mapper.TradeMapper;
+import com.wuqiong.tx.rest.UserRestService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +22,8 @@ public class TradeServiceImpl implements TradeService {
 
     @Resource
     private TradeMapper tradeMapper;
-    @Resource
-    private UserService userService;
+    @Autowired
+    private UserRestService userRestService;
 
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = RuntimeException.class)
     @Override
@@ -31,13 +33,15 @@ public class TradeServiceImpl implements TradeService {
             User user = new User();
             user.setCompanyID(companyID);
             user.setUsername(trade.getBuyerID());
-            userService.addUser(user);
+            String transactionID = ContextHolder.getLocalTransactionID();
+            userRestService.addUser(companyID, transactionID, user);
             int a = 1;
             int b = 0;
             int c = a/b;
             trade.setCompanyID(companyID);
             tradeMapper.addTrade(trade);
         } catch (Exception e) {
+            e.printStackTrace();
             System.out.println("保存订单出错");
             throw new RuntimeException("保存订单出错");
         }

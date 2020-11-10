@@ -13,7 +13,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
  * @Author Cain
  * @date 2020/8/27
  */
-public class MyApplication {
+public class MySpringApplication  {
 
     static AnnotationConfigApplicationContext context;
     static UserService userService;

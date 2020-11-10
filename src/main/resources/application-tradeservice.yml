@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: wuqiong-trade-service
+server:
+  port: 8081
